@@ -1377,7 +1377,7 @@ static int parse_sdw_endpoints(struct snd_soc_card *card,
 			       int *num_devs)
 {
 	struct device *dev = card->dev;
-	struct mc_private *ctx = snd_soc_card_get_drvdata(card);
+	struct asoc_sdw_mc_private *ctx = snd_soc_card_get_drvdata(card);
 	struct snd_soc_acpi_mach *mach = dev_get_platdata(dev);
 	struct snd_soc_acpi_mach_params *mach_params = &mach->mach_params;
 	const struct snd_soc_acpi_link_adr *adr_link;
@@ -1498,7 +1498,8 @@ static int create_sdw_dailink(struct snd_soc_card *card,
 			      int *be_id, struct snd_soc_codec_conf **codec_conf)
 {
 	struct device *dev = card->dev;
-	struct mc_private *ctx = snd_soc_card_get_drvdata(card);
+	struct asoc_sdw_mc_private *ctx = snd_soc_card_get_drvdata(card);
+	struct intel_mc_ctx *intel_ctx = (struct intel_mc_ctx *)ctx->private;
 	struct sof_sdw_endpoint *sof_end;
 	int stream;
 	int ret;
@@ -1577,7 +1578,7 @@ static int create_sdw_dailink(struct snd_soc_card *card,
 
 			if (cur_link != sof_end->link_mask) {
 				int link_num = ffs(sof_end->link_mask) - 1;
-				int pin_num = ctx->sdw_pin_index[link_num]++;
+				int pin_num = intel_ctx->sdw_pin_index[link_num]++;
 
 				cur_link = sof_end->link_mask;
 
@@ -1631,11 +1632,12 @@ static int create_sdw_dailinks(struct snd_soc_card *card,
 			       struct sof_sdw_dailink *sof_dais,
 			       struct snd_soc_codec_conf **codec_conf)
 {
-	struct mc_private *ctx = snd_soc_card_get_drvdata(card);
+	struct asoc_sdw_mc_private *ctx = snd_soc_card_get_drvdata(card);
+	struct intel_mc_ctx *intel_ctx = (struct intel_mc_ctx *)ctx->private;
 	int ret, i;
 
 	for (i = 0; i < SDW_MAX_LINKS; i++)
-		ctx->sdw_pin_index[i] = SOC_SDW_INTEL_BIDIR_PDI_BASE;
+		intel_ctx->sdw_pin_index[i] = SOC_SDW_INTEL_BIDIR_PDI_BASE;
 
 	/* generate DAI links by each sdw link */
 	while (sof_dais->initialised) {
@@ -1723,7 +1725,8 @@ static int create_hdmi_dailinks(struct snd_soc_card *card,
 				int hdmi_num)
 {
 	struct device *dev = card->dev;
-	struct mc_private *ctx = snd_soc_card_get_drvdata(card);
+	struct asoc_sdw_mc_private *ctx = snd_soc_card_get_drvdata(card);
+	struct intel_mc_ctx *intel_ctx = (struct intel_mc_ctx *)ctx->private;
 	int i, ret;
 
 	for (i = 0; i < hdmi_num; i++) {
@@ -1731,7 +1734,7 @@ static int create_hdmi_dailinks(struct snd_soc_card *card,
 		char *cpu_dai_name = devm_kasprintf(dev, GFP_KERNEL, "iDisp%d Pin", i + 1);
 		char *codec_name, *codec_dai_name;
 
-		if (ctx->hdmi.idisp_codec) {
+		if (intel_ctx->hdmi.idisp_codec) {
 			codec_name = "ehdaudio0D2";
 			codec_dai_name = devm_kasprintf(dev, GFP_KERNEL,
 							"intel-hdmi-hifi%d", i + 1);
@@ -1779,7 +1782,8 @@ static int sof_card_dai_links_create(struct snd_soc_card *card)
 	struct device *dev = card->dev;
 	struct snd_soc_acpi_mach *mach = dev_get_platdata(card->dev);
 	int sdw_be_num = 0, ssp_num = 0, dmic_num = 0, bt_num = 0;
-	struct mc_private *ctx = snd_soc_card_get_drvdata(card);
+	struct asoc_sdw_mc_private *ctx = snd_soc_card_get_drvdata(card);
+	struct intel_mc_ctx *intel_ctx = (struct intel_mc_ctx *)ctx->private;
 	struct snd_soc_acpi_mach_params *mach_params = &mach->mach_params;
 	struct snd_soc_codec_conf *codec_conf;
 	struct asoc_sdw_codec_info *ssp_info;
@@ -1831,7 +1835,7 @@ static int sof_card_dai_links_create(struct snd_soc_card *card)
 	}
 
 	if (mach_params->codec_mask & IDISP_CODEC_MASK)
-		ctx->hdmi.idisp_codec = true;
+		intel_ctx->hdmi.idisp_codec = true;
 
 	if (sof_sdw_quirk & SOF_SDW_TGL_HDMI)
 		hdmi_num = SOF_TGL_HDMI_COUNT;
@@ -1847,7 +1851,7 @@ static int sof_card_dai_links_create(struct snd_soc_card *card)
 
 	dev_dbg(dev, "sdw %d, ssp %d, dmic %d, hdmi %d, bt: %d\n",
 		sdw_be_num, ssp_num, dmic_num,
-		ctx->hdmi.idisp_codec ? hdmi_num : 0, bt_num);
+		intel_ctx->hdmi.idisp_codec ? hdmi_num : 0, bt_num);
 
 	codec_conf = devm_kcalloc(dev, num_devs, sizeof(*codec_conf), GFP_KERNEL);
 	if (!codec_conf) {
@@ -1920,7 +1924,8 @@ err_dai:
 
 static int sof_sdw_card_late_probe(struct snd_soc_card *card)
 {
-	struct mc_private *ctx = snd_soc_card_get_drvdata(card);
+	struct asoc_sdw_mc_private *ctx = snd_soc_card_get_drvdata(card);
+	struct intel_mc_ctx *intel_ctx = (struct intel_mc_ctx *)ctx->private;
 	int ret = 0;
 	int i;
 
@@ -1933,7 +1938,7 @@ static int sof_sdw_card_late_probe(struct snd_soc_card *card)
 		}
 	}
 
-	if (ctx->hdmi.idisp_codec)
+	if (intel_ctx->hdmi.idisp_codec)
 		ret = sof_sdw_hdmi_card_late_probe(card);
 
 	return ret;
@@ -1992,16 +1997,22 @@ static int mc_probe(struct platform_device *pdev)
 {
 	struct snd_soc_acpi_mach *mach = dev_get_platdata(&pdev->dev);
 	struct snd_soc_card *card;
-	struct mc_private *ctx;
+	struct asoc_sdw_mc_private *ctx;
+	struct intel_mc_ctx *intel_ctx;
 	int amp_num = 0, i;
 	int ret;
 
 	dev_dbg(&pdev->dev, "Entry\n");
 
+	intel_ctx = devm_kzalloc(&pdev->dev, sizeof(*intel_ctx), GFP_KERNEL);
+	if (!intel_ctx)
+		return -ENOMEM;
+
 	ctx = devm_kzalloc(&pdev->dev, sizeof(*ctx), GFP_KERNEL);
 	if (!ctx)
 		return -ENOMEM;
 
+	ctx->private = intel_ctx;
 	card = &ctx->card;
 	card->dev = &pdev->dev;
 	card->name = "soundwire";
