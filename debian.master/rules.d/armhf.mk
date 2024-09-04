@@ -13,7 +13,6 @@ do_tools_perf	= false
 do_tools_perf_jvmti = false
 do_tools_perf_python = false
 do_tools_bpftool = true
-do_tools_bpftool_stub = true
 do_tools_rtla = true
 
 do_dtbs		= true
