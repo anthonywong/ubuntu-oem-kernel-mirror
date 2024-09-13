@@ -673,7 +673,7 @@ static const struct snd_soc_ops sdw_ops = {
 	.shutdown = asoc_sdw_shutdown,
 };
 
-struct sof_sdw_endpoint {
+struct asoc_sdw_endpoint {
 	struct list_head list;
 
 	u32 link_mask;
@@ -685,7 +685,7 @@ struct sof_sdw_endpoint {
 	const struct asoc_sdw_dai_info *dai_info;
 };
 
-struct sof_sdw_dailink {
+struct asoc_sdw_dailink {
 	bool initialised;
 
 	u8 group_id;
@@ -716,8 +716,8 @@ static int count_sdw_endpoints(struct snd_soc_card *card, int *num_devs, int *nu
 	return 0;
 }
 
-static struct sof_sdw_dailink *find_dailink(struct sof_sdw_dailink *dailinks,
-					    const struct snd_soc_acpi_endpoint *new)
+static struct asoc_sdw_dailink *find_dailink(struct asoc_sdw_dailink *dailinks,
+					     const struct snd_soc_acpi_endpoint *new)
 {
 	while (dailinks->initialised) {
 		if (new->aggregated && dailinks->group_id == new->group_id)
@@ -734,8 +734,8 @@ static struct sof_sdw_dailink *find_dailink(struct sof_sdw_dailink *dailinks,
 }
 
 static int parse_sdw_endpoints(struct snd_soc_card *card,
-			       struct sof_sdw_dailink *sof_dais,
-			       struct sof_sdw_endpoint *sof_ends,
+			       struct asoc_sdw_dailink *sof_dais,
+			       struct asoc_sdw_endpoint *sof_ends,
 			       int *num_devs)
 {
 	struct device *dev = card->dev;
@@ -743,7 +743,7 @@ static int parse_sdw_endpoints(struct snd_soc_card *card,
 	struct snd_soc_acpi_mach *mach = dev_get_platdata(dev);
 	struct snd_soc_acpi_mach_params *mach_params = &mach->mach_params;
 	const struct snd_soc_acpi_link_adr *adr_link;
-	struct sof_sdw_endpoint *sof_end = sof_ends;
+	struct asoc_sdw_endpoint *sof_end = sof_ends;
 	int num_dais = 0;
 	int i, j;
 	int ret;
@@ -794,7 +794,7 @@ static int parse_sdw_endpoints(struct snd_soc_card *card,
 			for (j = 0; j < adr_dev->num_endpoints; j++) {
 				const struct snd_soc_acpi_endpoint *adr_end;
 				const struct asoc_sdw_dai_info *dai_info;
-				struct sof_sdw_dailink *sof_dai;
+				struct asoc_sdw_dailink *sof_dai;
 				int stream;
 
 				adr_end = &adr_dev->endpoints[j];
@@ -856,14 +856,14 @@ static int parse_sdw_endpoints(struct snd_soc_card *card,
 }
 
 static int create_sdw_dailink(struct snd_soc_card *card,
-			      struct sof_sdw_dailink *sof_dai,
+			      struct asoc_sdw_dailink *sof_dai,
 			      struct snd_soc_dai_link **dai_links,
 			      int *be_id, struct snd_soc_codec_conf **codec_conf)
 {
 	struct device *dev = card->dev;
 	struct asoc_sdw_mc_private *ctx = snd_soc_card_get_drvdata(card);
 	struct intel_mc_ctx *intel_ctx = (struct intel_mc_ctx *)ctx->private;
-	struct sof_sdw_endpoint *sof_end;
+	struct asoc_sdw_endpoint *sof_end;
 	int stream;
 	int ret;
 
@@ -902,7 +902,7 @@ static int create_sdw_dailink(struct snd_soc_card *card,
 			continue;
 
 		sof_end = list_first_entry(&sof_dai->endpoints,
-					   struct sof_sdw_endpoint, list);
+					   struct asoc_sdw_endpoint, list);
 
 		*be_id = sof_end->dai_info->dailink[stream];
 		if (*be_id < 0) {
@@ -993,7 +993,7 @@ static int create_sdw_dailink(struct snd_soc_card *card,
 
 static int create_sdw_dailinks(struct snd_soc_card *card,
 			       struct snd_soc_dai_link **dai_links, int *be_id,
-			       struct sof_sdw_dailink *sof_dais,
+			       struct asoc_sdw_dailink *sof_dais,
 			       struct snd_soc_codec_conf **codec_conf)
 {
 	struct asoc_sdw_mc_private *ctx = snd_soc_card_get_drvdata(card);
@@ -1161,8 +1161,8 @@ static int sof_card_dai_links_create(struct snd_soc_card *card)
 	struct snd_soc_acpi_mach_params *mach_params = &mach->mach_params;
 	struct snd_soc_codec_conf *codec_conf;
 	struct asoc_sdw_codec_info *ssp_info;
-	struct sof_sdw_endpoint *sof_ends;
-	struct sof_sdw_dailink *sof_dais;
+	struct asoc_sdw_endpoint *sof_ends;
+	struct asoc_sdw_dailink *sof_dais;
 	int num_devs = 0;
 	int num_ends = 0;
 	struct snd_soc_dai_link *dai_links;
