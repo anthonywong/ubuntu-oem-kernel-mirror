@@ -337,6 +337,9 @@ static void __xe_display_pm_suspend(struct xe_device *xe, bool runtime)
 	intel_opregion_suspend(xe, s2idle ? PCI_D1 : PCI_D3cold);
 
 	intel_dmc_suspend(xe);
+
+	if (runtime && has_display(xe))
+		intel_hpd_poll_enable(xe);
 }
 
 void xe_display_pm_suspend(struct xe_device *xe)
@@ -349,8 +352,10 @@ void xe_display_pm_runtime_suspend(struct xe_device *xe)
 	if (!xe->info.enable_display)
 		return;
 
-	if (xe->d3cold.allowed)
+	if (xe->d3cold.allowed) {
 		__xe_display_pm_suspend(xe, true);
+		return;
+	}
 
 	intel_hpd_poll_enable(xe);
 }
@@ -398,8 +403,10 @@ static void __xe_display_pm_resume(struct xe_device *xe, bool runtime)
 		intel_display_driver_resume(xe);
 		drm_kms_helper_poll_enable(&xe->drm);
 		intel_display_driver_enable_user_access(xe);
-		intel_hpd_poll_disable(xe);
 	}
+
+	if (has_display(xe))
+		intel_hpd_poll_disable(xe);
 
 	intel_opregion_resume(xe);
 
@@ -418,10 +425,12 @@ void xe_display_pm_runtime_resume(struct xe_device *xe)
 	if (!xe->info.enable_display)
 		return;
 
-	intel_hpd_poll_disable(xe);
-
-	if (xe->d3cold.allowed)
+	if (xe->d3cold.allowed) {
 		__xe_display_pm_resume(xe, true);
+		return;
+	}
+
+	intel_hpd_poll_disable(xe);
 }
 
 
