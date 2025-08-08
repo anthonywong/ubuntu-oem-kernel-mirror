@@ -36,12 +36,6 @@ SKIP_CONFIGS = (
 )
 
 
-def removeprefix(data, prefix):
-    if data[: len(prefix)] == prefix:
-        data = data[len(prefix) :]
-    return data
-
-
 def make_parser():
     parser = argparse.ArgumentParser(
         description="Manage Ubuntu kernel .config and annotations",
@@ -187,7 +181,7 @@ def do_query(args):
 
 def do_autocomplete(args):
     a = Annotation(args.file)
-    res = (removeprefix(c, "CONFIG_") for c in a.search_config())
+    res = (c.removeprefix("CONFIG_") for c in a.search_config())
     res_str = " ".join(res)
     print(f'complete -W "{res_str}" annotations')
 
