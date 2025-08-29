@@ -628,7 +628,7 @@ void pci_setup_cardbus(struct pci_bus *bus)
 
 	res = bus->resource[0];
 	pcibios_resource_to_bus(bridge->bus, &region, res);
-	if (res->flags & IORESOURCE_IO) {
+	if (res->parent && res->flags & IORESOURCE_IO) {
 		/*
 		 * The IO resource is allocated a range twice as large as it
 		 * would normally need.  This allows us to set both IO regs.
@@ -642,7 +642,7 @@ void pci_setup_cardbus(struct pci_bus *bus)
 
 	res = bus->resource[1];
 	pcibios_resource_to_bus(bridge->bus, &region, res);
-	if (res->flags & IORESOURCE_IO) {
+	if (res->parent && res->flags & IORESOURCE_IO) {
 		pci_info(bridge, "  bridge window %pR\n", res);
 		pci_write_config_dword(bridge, PCI_CB_IO_BASE_1,
 					region.start);
@@ -652,7 +652,7 @@ void pci_setup_cardbus(struct pci_bus *bus)
 
 	res = bus->resource[2];
 	pcibios_resource_to_bus(bridge->bus, &region, res);
-	if (res->flags & IORESOURCE_MEM) {
+	if (res->parent && res->flags & IORESOURCE_MEM) {
 		pci_info(bridge, "  bridge window %pR\n", res);
 		pci_write_config_dword(bridge, PCI_CB_MEMORY_BASE_0,
 					region.start);
@@ -662,7 +662,7 @@ void pci_setup_cardbus(struct pci_bus *bus)
 
 	res = bus->resource[3];
 	pcibios_resource_to_bus(bridge->bus, &region, res);
-	if (res->flags & IORESOURCE_MEM) {
+	if (res->parent && res->flags & IORESOURCE_MEM) {
 		pci_info(bridge, "  bridge window %pR\n", res);
 		pci_write_config_dword(bridge, PCI_CB_MEMORY_BASE_1,
 					region.start);
@@ -703,7 +703,7 @@ static void pci_setup_bridge_io(struct pci_dev *bridge)
 	res = &bridge->resource[PCI_BRIDGE_IO_WINDOW];
 	res_name = pci_resource_name(bridge, PCI_BRIDGE_IO_WINDOW);
 	pcibios_resource_to_bus(bridge->bus, &region, res);
-	if (res->flags & IORESOURCE_IO) {
+	if (res->parent && res->flags & IORESOURCE_IO) {
 		pci_read_config_word(bridge, PCI_IO_BASE, &l);
 		io_base_lo = (region.start >> 8) & io_mask;
 		io_limit_lo = (region.end >> 8) & io_mask;
@@ -735,7 +735,7 @@ static void pci_setup_bridge_mmio(struct pci_dev *bridge)
 	res = &bridge->resource[PCI_BRIDGE_MEM_WINDOW];
 	res_name = pci_resource_name(bridge, PCI_BRIDGE_MEM_WINDOW);
 	pcibios_resource_to_bus(bridge->bus, &region, res);
-	if (res->flags & IORESOURCE_MEM) {
+	if (res->parent && res->flags & IORESOURCE_MEM) {
 		l = (region.start >> 16) & 0xfff0;
 		l |= region.end & 0xfff00000;
 		pci_info(bridge, "  %s %pR\n", res_name, res);
@@ -764,7 +764,7 @@ static void pci_setup_bridge_mmio_pref(struct pci_dev *bridge)
 	res = &bridge->resource[PCI_BRIDGE_PREF_MEM_WINDOW];
 	res_name = pci_resource_name(bridge, PCI_BRIDGE_PREF_MEM_WINDOW);
 	pcibios_resource_to_bus(bridge->bus, &region, res);
-	if (res->flags & IORESOURCE_PREFETCH) {
+	if (res->parent && res->flags & IORESOURCE_PREFETCH) {
 		l = (region.start >> 16) & 0xfff0;
 		l |= region.end & 0xfff00000;
 		if (res->flags & IORESOURCE_MEM_64) {
@@ -816,6 +816,8 @@ static void pci_setup_bridge(struct pci_bus *bus)
 
 int pci_claim_bridge_resource(struct pci_dev *bridge, int i)
 {
+	int ret = -EINVAL;
+
 	if (i < PCI_BRIDGE_RESOURCES || i > PCI_BRIDGE_RESOURCE_END)
 		return 0;
 
@@ -829,11 +831,8 @@ int pci_claim_bridge_resource(struct pci_dev *bridge, int i)
 		return -EINVAL;
 
 	/* Try to clip the resource and claim the smaller window */
-	if (!pci_bus_clip_resource(bridge, i))
-		return -EINVAL;	/* Clipping didn't change anything */
-
-	if (!pci_claim_resource(bridge, i))
-		return -EINVAL;
+	if (pci_bus_clip_resource(bridge, i))
+		ret = pci_claim_resource(bridge, i);
 
 	switch (i) {
 	case PCI_BRIDGE_IO_WINDOW:
@@ -849,7 +848,7 @@ int pci_claim_bridge_resource(struct pci_dev *bridge, int i)
 		return -EINVAL;
 	}
 
-	return 0;
+	return ret;
 }
 
 /*
