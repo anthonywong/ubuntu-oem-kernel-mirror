@@ -30,6 +30,14 @@
 #define DELL_SSIDEXV2_EFI_GUID \
 	EFI_GUID(0x6a5f35df, 0x1432, 0x4656, 0x85, 0x97, 0x31, 0x04, 0xd5, 0xbf, 0x3a, 0xb0)
 
+#define LENOVO_SPEAKER_ID_EFI_NAME L"SdwSpeaker"
+#define LENOVO_SPEAKER_ID_EFI_GUID \
+	EFI_GUID(0x48df970e, 0xe27f, 0x460a, 0xb5, 0x86, 0x77, 0x19, 0x80, 0x1d, 0x92, 0x82)
+
+#define HP_SPEAKER_ID_EFI_NAME L"HPSpeakerID"
+#define HP_SPEAKER_ID_EFI_GUID \
+	EFI_GUID(0xc49593a4, 0xd099, 0x419b, 0xa2, 0xc3, 0x67, 0xe9, 0x80, 0xe6, 0x1d, 0x1e)
+
 #define CS_AMP_CAL_DEFAULT_EFI_ATTR			\
 		(EFI_VARIABLE_NON_VOLATILE |		\
 		 EFI_VARIABLE_BOOTSERVICE_ACCESS |	\
@@ -589,6 +597,81 @@ int cs_amp_get_efi_calibration_data(struct device *dev, u64 target_uid, int amp_
 		return -ENOENT;
 }
 EXPORT_SYMBOL_NS_GPL(cs_amp_get_efi_calibration_data, "SND_SOC_CS_AMP_LIB");
+
+struct cs_amp_spkid_efi {
+	efi_char16_t *name;
+	efi_guid_t *guid;
+	u8 values[2];
+};
+
+static int cs_amp_get_efi_byte_spkid(struct device *dev, const struct cs_amp_spkid_efi *info)
+{
+	efi_status_t status;
+	unsigned long size;
+	u8 spkid;
+	int i, ret;
+
+	size = sizeof(spkid);
+	status = cs_amp_get_efi_variable(info->name, info->guid, NULL, &size, &spkid);
+	ret = cs_amp_convert_efi_status(status);
+	if (ret < 0)
+		return ret;
+
+	if (size == 0)
+		return -ENOENT;
+
+	for (i = 0; i < ARRAY_SIZE(info->values); i++) {
+		if (info->values[i] == spkid)
+			return i;
+	}
+
+	dev_err(dev, "EFI speaker ID bad value %#x\n", spkid);
+
+	return -EINVAL;
+}
+
+static const struct cs_amp_spkid_efi cs_amp_spkid_byte_types[] = {
+	{
+		.name = LENOVO_SPEAKER_ID_EFI_NAME,
+		.guid = &LENOVO_SPEAKER_ID_EFI_GUID,
+		.values = { 0xd0, 0xd1 },
+	},
+	{
+		.name = HP_SPEAKER_ID_EFI_NAME,
+		.guid = &HP_SPEAKER_ID_EFI_GUID,
+		.values = { 0x30, 0x31 },
+	},
+};
+
+/**
+ * cs_amp_get_vendor_spkid - get a speaker ID from vendor-specific storage
+ * @dev:	pointer to struct device
+ *
+ * Known vendor-specific methods of speaker ID are checked and if one is
+ * found its speaker ID value is returned.
+ *
+ * Return: >=0 is a valid speaker ID. -ENOENT if a vendor-specific method
+ *	   was not found. -EACCES if the vendor-specific storage could not
+ *	   be read. Other error values indicate that the data from the
+ *	   vendor-specific storage was found but could not be understood.
+ */
+int cs_amp_get_vendor_spkid(struct device *dev)
+{
+	int i, ret;
+
+	if (!efi_rt_services_supported(EFI_RT_SUPPORTED_GET_VARIABLE) &&
+	    !IS_ENABLED(CONFIG_SND_SOC_CS_AMP_LIB_TEST))
+		return -ENOENT;
+
+	for (i = 0; i < ARRAY_SIZE(cs_amp_spkid_byte_types); i++) {
+		ret = cs_amp_get_efi_byte_spkid(dev, &cs_amp_spkid_byte_types[i]);
+		if (ret != -ENOENT)
+			return ret;
+	}
+
+	return -ENOENT;
+}
+EXPORT_SYMBOL_NS_GPL(cs_amp_get_vendor_spkid, "SND_SOC_CS_AMP_LIB");
 
 /**
  * cs_amp_set_efi_calibration_data - write a calibration data entry to EFI.
