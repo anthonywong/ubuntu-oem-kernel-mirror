@@ -628,13 +628,13 @@ DEFINE_GUARD(pm_runtime_active_auto, struct device *,
  * device.
  */
 DEFINE_GUARD_COND(pm_runtime_active, _try,
-		  pm_runtime_get_active(_T, RPM_TRANSPARENT))
+		  pm_runtime_get_active(_T, RPM_TRANSPARENT), _RET == 0)
 DEFINE_GUARD_COND(pm_runtime_active, _try_enabled,
-		  pm_runtime_resume_and_get(_T))
+		  pm_runtime_resume_and_get(_T), _RET == 0)
 DEFINE_GUARD_COND(pm_runtime_active_auto, _try,
-		  pm_runtime_get_active(_T, RPM_TRANSPARENT))
+		  pm_runtime_get_active(_T, RPM_TRANSPARENT), _RET == 0)
 DEFINE_GUARD_COND(pm_runtime_active_auto, _try_enabled,
-		  pm_runtime_resume_and_get(_T))
+		  pm_runtime_resume_and_get(_T), _RET == 0)
 
 /* ACQUIRE() wrapper macros for the guards defined above. */
 
