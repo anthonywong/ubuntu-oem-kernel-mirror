@@ -20,6 +20,14 @@
 #include <linux/random.h>
 #include <sound/cs-amp-lib.h>
 
+#define CIRRUS_LOGIC_CALIBRATION_EFI_NAME L"CirrusSmartAmpCalibrationData"
+#define CIRRUS_LOGIC_CALIBRATION_EFI_GUID \
+	EFI_GUID(0x02f9af02, 0x7734, 0x4233, 0xb4, 0x3d, 0x93, 0xfe, 0x5a, 0xa3, 0x5d, 0xb3)
+
+#define HP_CALIBRATION_EFI_NAME L"SmartAmpCalibrationData"
+#define HP_CALIBRATION_EFI_GUID \
+	EFI_GUID(0x53559579, 0x8753, 0x4f5c, 0x91, 0x30, 0xe8, 0x2a, 0xcf, 0xb8, 0xd8, 0x93)
+
 KUNIT_DEFINE_ACTION_WRAPPER(faux_device_destroy_wrapper, faux_device_destroy,
 			    struct faux_device *)
 
