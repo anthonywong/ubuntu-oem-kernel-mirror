@@ -82,6 +82,7 @@ static u64 cs_amp_lib_test_get_target_uid(struct kunit *test)
 /* Redirected get_efi_variable to simulate that the file is too short */
 static efi_status_t cs_amp_lib_test_get_efi_variable_nohead(efi_char16_t *name,
 							    efi_guid_t *guid,
+							    u32 *returned_attr,
 							    unsigned long *size,
 							    void *buf)
 {
@@ -114,6 +115,7 @@ static void cs_amp_lib_test_cal_data_too_short_test(struct kunit *test)
 /* Redirected get_efi_variable to simulate that the count is larger than the file */
 static efi_status_t cs_amp_lib_test_get_efi_variable_bad_count(efi_char16_t *name,
 							       efi_guid_t *guid,
+							       u32 *returned_attr,
 							       unsigned long *size,
 							       void *buf)
 {
@@ -157,6 +159,7 @@ static void cs_amp_lib_test_cal_count_too_big_test(struct kunit *test)
 /* Redirected get_efi_variable to simulate that the variable not found */
 static efi_status_t cs_amp_lib_test_get_efi_variable_none(efi_char16_t *name,
 							  efi_guid_t *guid,
+							  u32 *returned_attr,
 							  unsigned long *size,
 							  void *buf)
 {
@@ -184,6 +187,7 @@ static void cs_amp_lib_test_no_cal_data_test(struct kunit *test)
 /* Redirected get_efi_variable to simulate reading a cal data blob */
 static efi_status_t cs_amp_lib_test_get_efi_variable(efi_char16_t *name,
 						     efi_guid_t *guid,
+						     u32 *returned_attr,
 						     unsigned long *size,
 						     void *buf)
 {
@@ -208,6 +212,12 @@ static efi_status_t cs_amp_lib_test_get_efi_variable(efi_char16_t *name,
 	KUNIT_ASSERT_GE_MSG(test, ksize(buf), priv->cal_blob->size, "Buffer to small");
 
 	memcpy(buf, priv->cal_blob, priv->cal_blob->size);
+
+	if (returned_attr) {
+		*returned_attr = EFI_VARIABLE_NON_VOLATILE |
+				 EFI_VARIABLE_BOOTSERVICE_ACCESS |
+				 EFI_VARIABLE_RUNTIME_ACCESS;
+	}
 
 	return EFI_SUCCESS;
 }
