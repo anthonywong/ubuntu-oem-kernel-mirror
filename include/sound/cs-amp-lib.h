@@ -53,6 +53,7 @@ int cs_amp_get_efi_calibration_data(struct device *dev, u64 target_uid, int amp_
 struct cs_amp_test_hooks {
 	efi_status_t (*get_efi_variable)(efi_char16_t *name,
 					 efi_guid_t *guid,
+					 u32 *returned_attr,
 					 unsigned long *size,
 					 void *buf);
 
