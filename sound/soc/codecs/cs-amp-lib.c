@@ -13,6 +13,7 @@
 #include <linux/firmware/cirrus/cs_dsp.h>
 #include <linux/math64.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/overflow.h>
 #include <linux/pci_ids.h>
 #include <linux/slab.h>
@@ -20,17 +21,24 @@
 #include <linux/types.h>
 #include <sound/cs-amp-lib.h>
 
-#define CS_AMP_CAL_GUID \
+#define CIRRUS_LOGIC_CALIBRATION_EFI_GUID \
 	EFI_GUID(0x02f9af02, 0x7734, 0x4233, 0xb4, 0x3d, 0x93, 0xfe, 0x5a, 0xa3, 0x5d, 0xb3)
 
-#define CS_AMP_CAL_NAME	L"CirrusSmartAmpCalibrationData"
+#define CIRRUS_LOGIC_CALIBRATION_EFI_NAME L"CirrusSmartAmpCalibrationData"
 
 #define DELL_SSIDEXV2_EFI_NAME L"SSIDexV2Data"
 #define DELL_SSIDEXV2_EFI_GUID \
 	EFI_GUID(0x6a5f35df, 0x1432, 0x4656, 0x85, 0x97, 0x31, 0x04, 0xd5, 0xbf, 0x3a, 0xb0)
 
+#define CS_AMP_CAL_DEFAULT_EFI_ATTR			\
+		(EFI_VARIABLE_NON_VOLATILE |		\
+		 EFI_VARIABLE_BOOTSERVICE_ACCESS |	\
+		 EFI_VARIABLE_RUNTIME_ACCESS)
+
 /* Offset from Unix time to Windows time (100ns since 1 Jan 1601) */
 #define UNIX_TIME_TO_WINDOWS_TIME_OFFSET	116444736000000000ULL
+
+static DEFINE_MUTEX(cs_amp_efi_cal_write_lock);
 
 static u64 cs_amp_time_now_in_windows_time(void)
 {
@@ -38,6 +46,16 @@ static u64 cs_amp_time_now_in_windows_time(void)
 
 	return time_in_100ns + UNIX_TIME_TO_WINDOWS_TIME_OFFSET;
 }
+
+static const struct cs_amp_lib_cal_efivar {
+	efi_char16_t *name;
+	efi_guid_t *guid;
+} cs_amp_lib_cal_efivars[] = {
+	{
+		.name = CIRRUS_LOGIC_CALIBRATION_EFI_NAME,
+		.guid = &CIRRUS_LOGIC_CALIBRATION_EFI_GUID,
+	},
+};
 
 static int cs_amp_write_cal_coeff(struct cs_dsp *dsp,
 				  const struct cirrus_amp_cal_controls *controls,
@@ -243,6 +261,20 @@ static efi_status_t cs_amp_get_efi_variable(efi_char16_t *name,
 	return EFI_NOT_FOUND;
 }
 
+static efi_status_t cs_amp_set_efi_variable(efi_char16_t *name,
+					    efi_guid_t *guid,
+					    u32 attr,
+					    unsigned long size,
+					    void *buf)
+{
+	KUNIT_STATIC_STUB_REDIRECT(cs_amp_set_efi_variable, name, guid, attr, size, buf);
+
+	if (!efi_rt_services_supported(EFI_RT_SUPPORTED_SET_VARIABLE))
+		return EFI_NOT_FOUND;
+
+	return efi.set_variable(name, guid, attr, size, buf);
+}
+
 static int cs_amp_convert_efi_status(efi_status_t status)
 {
 	switch (status) {
@@ -252,6 +284,7 @@ static int cs_amp_convert_efi_status(efi_status_t status)
 		return -ENOENT;
 	case EFI_BUFFER_TOO_SMALL:
 		return -EFBIG;
+	case EFI_WRITE_PROTECTED:
 	case EFI_UNSUPPORTED:
 	case EFI_ACCESS_DENIED:
 	case EFI_SECURITY_VIOLATION:
@@ -284,18 +317,28 @@ static void *cs_amp_alloc_get_efi_variable(efi_char16_t *name,
 	return_ptr(buf);
 }
 
-static struct cirrus_amp_efi_data *cs_amp_get_cal_efi_buffer(struct device *dev)
+static struct cirrus_amp_efi_data *cs_amp_get_cal_efi_buffer(struct device *dev,
+							     efi_char16_t **name,
+							     efi_guid_t **guid,
+							     u32 *attr)
 {
 	struct cirrus_amp_efi_data *efi_data;
 	unsigned long data_size = 0;
 	u8 *data;
 	efi_status_t status;
 	int ret;
+	int i = 0;
 
 	/* Get real size of UEFI variable */
-	status = cs_amp_get_efi_variable(CS_AMP_CAL_NAME, &CS_AMP_CAL_GUID, NULL, &data_size, NULL);
+	status = cs_amp_get_efi_variable(CIRRUS_LOGIC_CALIBRATION_EFI_NAME, &CIRRUS_LOGIC_CALIBRATION_EFI_GUID, NULL, &data_size, NULL);
 	if (status != EFI_BUFFER_TOO_SMALL)
 		return ERR_PTR(-ENOENT);
+
+	if (name)
+		*name = cs_amp_lib_cal_efivars[i].name;
+
+	if (guid)
+		*guid = cs_amp_lib_cal_efivars[i].guid;
 
 	if (data_size < sizeof(*efi_data)) {
 		dev_err(dev, "EFI cal variable truncated\n");
@@ -307,7 +350,7 @@ static struct cirrus_amp_efi_data *cs_amp_get_cal_efi_buffer(struct device *dev)
 	if (!data)
 		return ERR_PTR(-ENOMEM);
 
-	status = cs_amp_get_efi_variable(CS_AMP_CAL_NAME, &CS_AMP_CAL_GUID, NULL, &data_size, data);
+	status = cs_amp_get_efi_variable(CIRRUS_LOGIC_CALIBRATION_EFI_NAME, &CIRRUS_LOGIC_CALIBRATION_EFI_GUID, NULL, &data_size, data);
 	if (status != EFI_SUCCESS) {
 		ret = -EINVAL;
 		goto err;
@@ -323,6 +366,10 @@ static struct cirrus_amp_efi_data *cs_amp_get_cal_efi_buffer(struct device *dev)
 		goto err;
 	}
 
+	/* This could be zero-filled space pre-allocated by the BIOS */
+	if (efi_data->size == 0)
+		efi_data->size = data_size;
+
 	return efi_data;
 
 err:
@@ -332,6 +379,20 @@ err:
 	return ERR_PTR(ret);
 }
 
+static int cs_amp_set_cal_efi_buffer(struct device *dev,
+				     efi_char16_t *name,
+				     efi_guid_t *guid,
+				     u32 attr,
+				     struct cirrus_amp_efi_data *data)
+{
+	efi_status_t status;
+
+	status = cs_amp_set_efi_variable(name, guid, attr,
+					 struct_size(data, data, data->count), data);
+
+	return cs_amp_convert_efi_status(status);
+}
+
 static int _cs_amp_get_efi_calibration_data(struct device *dev, u64 target_uid, int amp_index,
 					    struct cirrus_amp_cal_data *out_data)
 {
@@ -339,7 +400,7 @@ static int _cs_amp_get_efi_calibration_data(struct device *dev, u64 target_uid, 
 	struct cirrus_amp_cal_data *cal = NULL;
 	int i, ret;
 
-	efi_data = cs_amp_get_cal_efi_buffer(dev);
+	efi_data = cs_amp_get_cal_efi_buffer(dev, NULL, NULL, NULL);
 	if (IS_ERR(efi_data))
 		return PTR_ERR(efi_data);
 
@@ -391,6 +452,98 @@ static int _cs_amp_get_efi_calibration_data(struct device *dev, u64 target_uid, 
 	return ret;
 }
 
+static int _cs_amp_set_efi_calibration_data(struct device *dev, int amp_index, int num_amps,
+					    const struct cirrus_amp_cal_data *in_data)
+{
+	u64 cal_target = cs_amp_cal_target_u64(in_data);
+	unsigned long num_entries;
+	struct cirrus_amp_efi_data *data __free(kfree) = NULL;
+	efi_char16_t *name = CIRRUS_LOGIC_CALIBRATION_EFI_NAME;
+	efi_guid_t *guid = &CIRRUS_LOGIC_CALIBRATION_EFI_GUID;
+	u32 attr = CS_AMP_CAL_DEFAULT_EFI_ATTR;
+	int i, ret;
+
+	if (cal_target == 0)
+		return -EINVAL;
+
+	data = cs_amp_get_cal_efi_buffer(dev, &name, &guid, &attr);
+	ret = PTR_ERR_OR_ZERO(data);
+	if (ret == -ENOENT) {
+		data = NULL;
+		goto alloc_new;
+	} else if (ret) {
+		return ret;
+	}
+
+	/*
+	 * If the EFI variable is just zero-filled reserved space the count
+	 * must be set.
+	 */
+	if (data->count == 0)
+		data->count = (data->size - sizeof(data)) / sizeof(data->data[0]);
+
+	if (amp_index < 0) {
+		/* Is there already a slot for this target? */
+		for (amp_index = 0; amp_index < data->count; amp_index++) {
+			if (cs_amp_cal_target_u64(&data->data[amp_index]) == cal_target)
+				break;
+		}
+
+		/* Else find an empty slot */
+		if (amp_index >= data->count) {
+			for (amp_index = 0; amp_index < data->count; amp_index++) {
+				if ((data->data[amp_index].calTime[0] == 0) &&
+				    (data->data[amp_index].calTime[1] == 0))
+					break;
+			}
+		}
+	} else {
+		/*
+		 * If the index is forced there could be another active
+		 * slot with the same calTarget. So deduplicate.
+		 */
+		for (i = 0; i < data->count; i++) {
+			if (i == amp_index)
+				continue;
+
+			if ((data->data[i].calTime[0] == 0) && (data->data[i].calTime[1] == 0))
+				continue;
+
+			if (cs_amp_cal_target_u64(&data->data[i]) == cal_target)
+				memset(data->data[i].calTime, 0, sizeof(data->data[i].calTime));
+		}
+	}
+
+alloc_new:
+	if (amp_index < 0)
+		amp_index = 0;
+
+	num_entries = max(num_amps, amp_index + 1);
+	if (!data || (data->count < num_entries)) {
+		struct cirrus_amp_efi_data *old_data __free(kfree) = no_free_ptr(data);
+		unsigned int new_data_size = struct_size(data, data, num_entries);
+
+		data = kzalloc(new_data_size, GFP_KERNEL);
+		if (!data)
+			return -ENOMEM;
+
+		if (old_data)
+			memcpy(data, old_data, struct_size(old_data, data, old_data->count));
+
+		data->count = num_entries;
+		data->size = new_data_size;
+	}
+
+	data->data[amp_index] = *in_data;
+	ret = cs_amp_set_cal_efi_buffer(dev, name, guid, attr, data);
+	if (ret) {
+		dev_err(dev, "Failed writing calibration to EFI: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
 /**
  * cs_amp_get_efi_calibration_data - get an entry from calibration data in EFI.
  * @dev:	struct device of the caller.
@@ -436,6 +589,46 @@ int cs_amp_get_efi_calibration_data(struct device *dev, u64 target_uid, int amp_
 		return -ENOENT;
 }
 EXPORT_SYMBOL_NS_GPL(cs_amp_get_efi_calibration_data, "SND_SOC_CS_AMP_LIB");
+
+/**
+ * cs_amp_set_efi_calibration_data - write a calibration data entry to EFI.
+ * @dev:	struct device of the caller.
+ * @amp_index:	Entry index to use, or -1 to use any available slot.
+ * @num_amps:	Maximum number of amps to reserve slots for, or -1 to ignore.
+ * @in_data:	struct cirrus_amp_cal_data entry to be written to EFI.
+ *
+ * If a Vendor-specific variable exists it will be updated,
+ * else if the Cirrus variable exists it will be updated
+ * else the Cirrus variable will be created.
+ *
+ * If amp_index >= 0 the data will be placed in this entry of the calibration
+ * data array, overwriting what was in that entry. Any other entries with the
+ * same calTarget will be marked empty.
+ *
+ * If amp_index < 0 and in_data->calTarget matches any existing entry, that
+ * entry will be overwritten. Else the first available free entry will be used,
+ * extending the size of the EFI variable if there are no free entries.
+ *
+ * If num_amps > 0 the EFI variable will be sized to contain at least this
+ * many calibration entries, with any new entries marked empty.
+ *
+ * Return: 0 if the write was successful, -EFBIG if space could not be made in
+ *	   the EFI file to add the entry, -EACCES if it was not possible to
+ *	   read or write the EFI variable.
+ */
+int cs_amp_set_efi_calibration_data(struct device *dev, int amp_index, int num_amps,
+				    const struct cirrus_amp_cal_data *in_data)
+{
+	if (IS_ENABLED(CONFIG_EFI) || IS_ENABLED(CONFIG_SND_SOC_CS_AMP_LIB_TEST)) {
+		scoped_guard(mutex, &cs_amp_efi_cal_write_lock) {
+			return _cs_amp_set_efi_calibration_data(dev, amp_index,
+								num_amps, in_data);
+		}
+	}
+
+	return -ENOENT;
+}
+EXPORT_SYMBOL_NS_GPL(cs_amp_set_efi_calibration_data, "SND_SOC_CS_AMP_LIB");
 
 static const char *cs_amp_devm_get_dell_ssidex(struct device *dev,
 					       int ssid_vendor, int ssid_device)
