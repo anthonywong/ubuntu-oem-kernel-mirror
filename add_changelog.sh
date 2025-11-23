@@ -21,11 +21,11 @@ tag="Ubuntu-${pkg#linux-}-${ver}"
 
 # 5. Execute dch commands
 # Initialize new entry
-DEBFULLNAME="Launchpad CI" DEBEMAIL="dummy@dummy.com" \
+DEBFULLNAME="Launchpad CI" DEBEMAIL="$USER@`hostname`" \
 dch --changelog "$chlog_file" --newversion "$new_ver" "Automated version bump for CI build"
 
 # Append git log subjects
-DEBFULLNAME="Launchpad CI" DEBEMAIL="dummy@dummy.com" \
 git log --pretty=format:"%s" "${tag}..HEAD" | while read -r line; do
+DEBFULLNAME="Launchpad CI" DEBEMAIL="$USER@`hostname`" \
     dch --changelog "$chlog_file" --append "$line"
 done
