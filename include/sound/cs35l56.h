@@ -62,6 +62,9 @@
 #define CS35L56_IRQ1_MASK_8				0x000E0AC
 #define CS35L56_IRQ1_MASK_18				0x000E0D4
 #define CS35L56_IRQ1_MASK_20				0x000E0DC
+#define CS35L56_GPIO_STATUS1				0x000F000
+#define CS35L56_GPIO1_CTRL1				0x000F008
+#define CS35L56_GPIO13_CTRL1				0x000F038
 #define CS35L56_DSP_MBOX_1_RAW				0x0011000
 #define CS35L56_DSP_VIRTUAL1_MBOX_1			0x0011020
 #define CS35L56_DSP_VIRTUAL1_MBOX_2			0x0011024
@@ -177,6 +180,12 @@
 /* IRQ1_EINT_8 */
 #define CS35L56_TEMP_ERR_EINT1_MASK			0x80000000
 
+/* GPIOn_CTRL1 */
+#define CS35L56_GPIO_DIR_MASK				0x80000000
+#define CS35L56_GPIO_FN_MASK				0x00000007
+
+#define CS35L56_GPIO_FN_GPIO				0x00000001
+
 /* Mixer input sources */
 #define CS35L56_INPUT_SRC_NONE				0x00
 #define CS35L56_INPUT_SRC_ASP1RX1			0x08
@@ -269,6 +278,8 @@
 
 #define CS35L56_NUM_BULK_SUPPLIES			3
 #define CS35L56_NUM_DSP_REGIONS				5
+
+#define CS35L56_MAX_GPIO				13
 
 /* Additional margin for SYSTEM_RESET to control port ready on SPI */
 #define CS35L56_SPI_RESET_TO_PORT_READY_US (CS35L56_CONTROL_PORT_READY_US + 2500)
@@ -363,6 +374,8 @@ int cs35l56_read_prot_status(struct cs35l56_base *cs35l56_base,
 void cs35l56_log_tuning(struct cs35l56_base *cs35l56_base, struct cs_dsp *cs_dsp);
 int cs35l56_hw_init(struct cs35l56_base *cs35l56_base);
 int cs35l56_get_speaker_id(struct cs35l56_base *cs35l56_base);
+int cs35l56_get_onchip_speaker_id(struct cs35l56_base *cs35l56_base,
+				  struct fwnode_handle *ext_node);
 int cs35l56_get_bclk_freq_id(unsigned int freq);
 void cs35l56_fill_supply_names(struct regulator_bulk_data *data);
 
