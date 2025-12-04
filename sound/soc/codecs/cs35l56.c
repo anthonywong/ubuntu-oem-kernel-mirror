@@ -1279,6 +1279,26 @@ static int cs35l56_dsp_init(struct cs35l56_private *cs35l56)
 	return 0;
 }
 
+static void cs35l56_process_xu_properties(struct cs35l56_private *cs35l56)
+{
+	struct fwnode_handle *link;
+	struct fwnode_handle *ext_node;
+
+	if (!cs35l56->sdw_peripheral)
+		return;
+
+	fwnode_for_each_child_node(dev_fwnode(cs35l56->base.dev), link) {
+		ext_node = fwnode_get_named_child_node(link,
+						"mipi-sdca-function-expansion-subproperties");
+		if (IS_ERR_OR_NULL(ext_node))
+			continue;
+
+		cs35l56->speaker_id = cs35l56_get_onchip_speaker_id(&cs35l56->base, ext_node);
+		fwnode_handle_put(ext_node);
+		break;
+	}
+}
+
 static int cs35l56_get_firmware_uid(struct cs35l56_private *cs35l56)
 {
 	struct device *dev = cs35l56->base.dev;
@@ -1513,6 +1533,8 @@ int cs35l56_init(struct cs35l56_private *cs35l56)
 	ret = cs35l56_get_calibration(&cs35l56->base);
 	if (ret)
 		return ret;
+
+	cs35l56_process_xu_properties(cs35l56);
 
 	if (!cs35l56->base.reset_gpio) {
 		dev_dbg(cs35l56->base.dev, "No reset gpio: using soft reset\n");
