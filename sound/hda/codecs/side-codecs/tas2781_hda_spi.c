@@ -636,7 +636,7 @@ static void tasdev_fw_ready(const struct firmware *fmw, void *context)
 	struct hda_codec *codec = tas_priv->codec;
 	int ret;
 
-	pm_runtime_get_sync(tas_priv->dev);
+	guard(pm_runtime_active_auto)(tas_priv->dev);
 	guard(mutex)(&tas_priv->codec_lock);
 
 	ret = tasdevice_rca_parser(tas_priv, fmw);
@@ -693,7 +693,6 @@ static void tasdev_fw_ready(const struct firmware *fmw, void *context)
 	tas2781_save_calibration(tas_hda);
 out:
 	release_firmware(fmw);
-	pm_runtime_put_autosuspend(tas_hda->priv->dev);
 }
 
 static int tas2781_hda_bind(struct device *dev, struct device *master,
@@ -714,7 +713,7 @@ static int tas2781_hda_bind(struct device *dev, struct device *master,
 
 	codec = parent->codec;
 
-	pm_runtime_get_sync(dev);
+	guard(pm_runtime_active_auto)(dev);
 
 	comp->dev = dev;
 
@@ -724,8 +723,6 @@ static int tas2781_hda_bind(struct device *dev, struct device *master,
 		tasdev_fw_ready);
 	if (!ret)
 		comp->playback_hook = tas2781_hda_playback_hook;
-
-	pm_runtime_put_autosuspend(dev);
 
 	return ret;
 }
