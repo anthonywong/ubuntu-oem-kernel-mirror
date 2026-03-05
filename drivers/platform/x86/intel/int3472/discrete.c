@@ -339,7 +339,7 @@ static int skl_int3472_handle_gpio_resources(struct acpi_resource *ares,
 		case INT3472_GPIO_TYPE_HANDSHAKE:
 			/* Setups using a handshake pin need 25 ms enable delay */
 			ret = skl_int3472_register_regulator(int3472, gpio,
-							     25 * USEC_PER_MSEC,
+							     50 * USEC_PER_MSEC,  // Himax needs 50 ms
 							     con_id, NULL);
 			if (ret)
 				err_msg = "Failed to map handshake to sensor\n";
