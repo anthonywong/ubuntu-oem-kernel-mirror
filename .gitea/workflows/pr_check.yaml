@@ -33,27 +33,40 @@ jobs:
     runs-on: catthehacker-runner-latest
 
     steps:
-      - name: Set up Python venv
-        uses: actions/prepare-venv@v1
-
-      - name: Install Python dependencies
-        run: pip install pyyaml==6.0.1 requests # Current version in noble
-
-      - name: Show Versions
-        run: |
-          cat /etc/os-release
-          python3 --version
-          pip3 list
+      - name: Create build directory
+        run: mkdir -p $GITHUB_WORKSPACE/kernel-build
 
       - name: Checkout source
         uses: actions/checkout@v4
         with:
           fetch-depth: 10
+          path: kernel-build/source
 
-      - name: Show latest commit
+      - name: Install build dependencies
         run: |
-          git --no-pager show
+          sudo apt-get update
+          sudo apt install --no-install-recommends --yes devscripts debhelper equivs
+          cd $GITHUB_WORKSPACE/kernel-build/source
+          debian/rules clean
+          sudo mk-build-deps -i -r -t "apt-get -y"
 
-      # Add your build steps here
-      # - name: Build kernel
-      #   run: make
+      - name: Build Ubuntu OEM kernel
+        run: |
+          cd $GITHUB_WORKSPACE/kernel-build/source
+          debian/rules clean
+          debian/rules build 2>&1 | tee $GITHUB_WORKSPACE/kernel-build/build.log
+          fakeroot debian/rules binary 2>&1 | tee -a $GITHUB_WORKSPACE/kernel-build/build.log
+        env:
+          DEB_BUILD_OPTIONS: "parallel=$(nproc)"
+
+      - name: List built packages
+        run: |
+          ls -lh $GITHUB_WORKSPACE/kernel-build/*.deb || echo "No deb packages found"
+
+      - name: Upload build log
+        if: always()
+        uses: https://code.forgejo.org/actions/upload-artifact@v3
+        with:
+          name: kernel-build-log
+          path: ${{ github.workspace }}/kernel-build/build.log
+          retention-days: 2
