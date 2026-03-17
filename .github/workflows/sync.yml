@@ -24,7 +24,7 @@ jobs:
         run: |
           # 1. Determine the URL
           SOURCE_URL="${{ github.event.inputs.manual_url || vars.SOURCE_REPO_URL }}"
-          DEFAULT_BRANCH="${{ vars.DEFAULT_BRANCH }}"
+          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
           PUSH_URL="https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/${{ github.repository }}.git"
 
           echo "Syncing from: $SOURCE_URL"
@@ -42,7 +42,7 @@ jobs:
 
             if [ "$branch_name" == "$DEFAULT_BRANCH" ]; then
               echo "Skipping default branch: $branch_name"
-              continue
+              continue;
             fi
 
             git push "$PUSH_URL" "$ref:refs/heads/$branch_name" --force
