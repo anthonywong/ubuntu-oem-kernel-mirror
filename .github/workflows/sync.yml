@@ -16,6 +16,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: sync-workflow
           fetch-depth: 0
           token: ${{ secrets.SYNC_TOKEN }}
 
@@ -23,33 +24,34 @@ jobs:
         run: |
           # 1. Determine the URL
           SOURCE_URL="${{ github.event.inputs.manual_url || vars.SOURCE_REPO_URL }}"
-          CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          
+          DEFAULT_BRANCH="${{ vars.DEFAULT_BRANCH }}"
+          PUSH_URL="https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/${{ github.repository }}.git"
+
           echo "Syncing from: $SOURCE_URL"
-          echo "Current workflow branch to protect: $CURRENT_BRANCH"
-          
+          echo "Default branch: $DEFAULT_BRANCH"
+
           # 2. Add the dynamic remote
           git remote add upstream "$SOURCE_URL"
-          
-          # 3. Fetch all data from Launchpad
-          # We use --prune to remove branches that no longer exist upstream
+
+          # 3. Fetch all data from upstream
           git fetch upstream --tags --prune
-          
-          # 4. Filtered Push
-          # We push all upstream refs EXCEPT the one matching our current branch name
-          # This prevents the workflow file from being overwritten.
+
+          # 4. Push all upstream branches except the default branch
           git for-each-ref refs/remotes/upstream --format='%(refname)' | while read ref; do
             branch_name="${ref#refs/remotes/upstream/}"
-            
-            if [ "$branch_name" == "$CURRENT_BRANCH" ]; then
-              echo "Skipping protected branch: $branch_name"
+
+            if [ "$branch_name" == "$DEFAULT_BRANCH" ]; then
+              echo "Skipping default branch: $branch_name"
               continue
             fi
-            
-            # Map 'upstream/branch' to 'origin/branch'
-            git push https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/${{ github.repository }}.git \
-              "$ref:refs/heads/$branch_name" --force
+
+            git push "$PUSH_URL" "$ref:refs/heads/$branch_name" --force
           done
 
-          # 5. Push tags separately
-          git push https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/${{ github.repository }}.git --tags --force
+          # 5. Push tags
+          git push "$PUSH_URL" --tags --force
+
+          # 6. Rebase onto the freshly synced upstream default branch
+          #    and push the result to the default branch
+          git rebase "refs/remotes/upstream/$DEFAULT_BRANCH"
+          git push "$PUSH_URL" HEAD:"refs/heads/$DEFAULT_BRANCH" --force
