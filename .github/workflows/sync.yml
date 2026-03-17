@@ -19,7 +19,12 @@ jobs:
           ref: sync-workflow
           fetch-depth: 0
           token: ${{ secrets.SYNC_TOKEN }}
-
+          
+      - name: Configure git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+    
       - name: Fetch and Push
         run: |
           # 1. Determine the URL
