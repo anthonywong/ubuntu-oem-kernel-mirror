@@ -1,11 +1,11 @@
-name: Sync remote git repository
+name: Sync remote git repositories
 on:
   schedule:
     - cron: '30 6 * * *'
   workflow_dispatch:
     inputs:
-      manual_url:
-        description: 'Override Source URL (Optional)'
+      manual_urls:
+        description: 'Override Source URLs (newline-separated, optional)'
         required: false
         default: ''
 
@@ -19,44 +19,98 @@ jobs:
           ref: sync-workflow
           fetch-depth: 0
           token: ${{ secrets.SYNC_TOKEN }}
-          
+
       - name: Configure git identity
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-    
+
       - name: Fetch and Push
+        env:
+          INPUT_URLS: ${{ github.event.inputs.manual_urls }}
+          VAR_URLS: ${{ vars.SOURCE_REPO_URLS }}
         run: |
-          # 1. Determine the URL
-          SOURCE_URL="${{ github.event.inputs.manual_url || vars.SOURCE_REPO_URL }}"
           DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
           PUSH_URL="https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/${{ github.repository }}.git"
 
-          echo "Syncing from: $SOURCE_URL"
+          # Build the list of source URLs.
+          # manual_urls (workflow_dispatch input) takes priority; fall back to
+          # the SOURCE_REPO_URLS repository variable.  Both accept multiple
+          # URLs separated by newlines, commas, or spaces.
+          RAW_URLS="${INPUT_URLS:-$VAR_URLS}"
+
+          # Normalise separators: replace commas and spaces with newlines,
+          # then drop blank lines.
+          URLS=$(echo "$RAW_URLS" | tr ',' '\n' | tr ' ' '\n' | sed '/^$/d')
+
+          if [ -z "$URLS" ]; then
+            echo "::error::No source URLs configured. Set the SOURCE_REPO_URLS variable or provide manual_urls."
+            exit 1
+          fi
+
           echo "Default branch: $DEFAULT_BRANCH"
+          echo "---"
+          echo "Source URLs:"
+          echo "$URLS"
+          echo "---"
 
-          # 2. Add the dynamic remote
-          git remote add upstream "$SOURCE_URL"
+          # Collect every branch name we push so we can detect duplicates.
+          SEEN_BRANCHES_FILE=$(mktemp)
+          REMOTE_INDEX=0
+          PRIMARY_REMOTE=""
 
-          # 3. Fetch all data from upstream
-          git fetch upstream --tags --prune
+          while IFS= read -r SOURCE_URL; do
+            REMOTE_INDEX=$((REMOTE_INDEX + 1))
+            REMOTE_NAME="upstream${REMOTE_INDEX}"
 
-          # 4. Push all upstream branches except the default branch
-          git for-each-ref refs/remotes/upstream --format='%(refname)' | while read ref; do
-            branch_name="${ref#refs/remotes/upstream/}"
+            echo ""
+            echo "========================================="
+            echo "Processing remote $REMOTE_NAME: $SOURCE_URL"
+            echo "========================================="
 
-            if [ "$branch_name" == "$DEFAULT_BRANCH" ]; then
-              echo "Skipping default branch: $branch_name"
-              continue;
+            # The first remote is the "primary" one whose default branch is
+            # used for the rebase step later.
+            if [ "$REMOTE_INDEX" -eq 1 ]; then
+              PRIMARY_REMOTE="$REMOTE_NAME"
             fi
 
-            git push "$PUSH_URL" "$ref:refs/heads/$branch_name" --force
-          done
+            # Add and fetch the remote
+            git remote add "$REMOTE_NAME" "$SOURCE_URL"
+            git fetch "$REMOTE_NAME" --tags --prune
 
-          # 5. Push tags
+            # Push all branches from this remote (except the default branch)
+            git for-each-ref "refs/remotes/${REMOTE_NAME}" --format='%(refname)' | while read ref; do
+              branch_name="${ref#refs/remotes/${REMOTE_NAME}/}"
+
+              # Skip the HEAD pointer if present
+              if [ "$branch_name" = "HEAD" ]; then
+                continue
+              fi
+
+              if [ "$branch_name" = "$DEFAULT_BRANCH" ]; then
+                echo "Skipping default branch: $branch_name"
+                continue
+              fi
+
+              # Check for duplicate branch names across remotes
+              if grep -qx "$branch_name" "$SEEN_BRANCHES_FILE" 2>/dev/null; then
+                echo "::error::Duplicate branch name detected: '$branch_name' (already synced from a previous remote)"
+                exit 1
+              fi
+
+              echo "$branch_name" >> "$SEEN_BRANCHES_FILE"
+              git push "$PUSH_URL" "$ref:refs/heads/$branch_name" --force
+            done
+
+          done <<< "$URLS"
+
+          rm -f "$SEEN_BRANCHES_FILE"
+
+          # Push all tags (from every remote that was fetched)
           git push "$PUSH_URL" --tags --force
 
-          # 6. Rebase onto the freshly synced upstream default branch
-          #    and push the result to the default branch
-          git rebase "refs/remotes/upstream/$DEFAULT_BRANCH"
+          # Rebase onto the primary upstream's default branch and push
+          echo ""
+          echo "Rebasing sync-workflow onto ${PRIMARY_REMOTE}/${DEFAULT_BRANCH}"
+          git rebase "refs/remotes/${PRIMARY_REMOTE}/${DEFAULT_BRANCH}"
           git push "$PUSH_URL" HEAD:"refs/heads/$DEFAULT_BRANCH" --force
