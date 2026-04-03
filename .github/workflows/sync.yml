@@ -41,7 +41,7 @@ jobs:
 
           # Normalise separators: replace commas and spaces with newlines,
           # then drop blank lines.
-          URLS=$(echo "$RAW_URLS" | tr ',' '\n' | tr ' ' '\n' | sed '/^$/d')
+          URLS=$(echo "$RAW_URLS" | tr -d '\r' | tr ',' '\n' | tr ' ' '\n' | sed '/^$/d')
 
           if [ -z "$URLS" ]; then
             echo "::error::No source URLs configured. Set the SOURCE_REPO_URLS variable or provide manual_urls."
