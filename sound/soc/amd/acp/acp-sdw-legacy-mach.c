@@ -111,6 +111,22 @@ static const struct dmi_system_id soc_sdw_quirk_table[] = {
 		},
 		.driver_data = (void *)(ASOC_SDW_CODEC_SPKR),
 	},
+	{
+		.callback = soc_sdw_quirk_cb,
+		.matches = { /* Lenovo P16s G5 AMD */
+			DMI_MATCH(DMI_SYS_VENDOR, "LENOVO"),
+			DMI_MATCH(DMI_PRODUCT_SKU, "21XG"),
+		},
+		.driver_data = (void *)(ASOC_SDW_ACP_DMIC),
+	},
+	{
+		.callback = soc_sdw_quirk_cb,
+		.matches = { /* Lenovo P16s G5 AMD */
+			DMI_MATCH(DMI_SYS_VENDOR, "LENOVO"),
+			DMI_MATCH(DMI_PRODUCT_SKU, "21XH"),
+		},
+		.driver_data = (void *)(ASOC_SDW_ACP_DMIC),
+	},
 	{}
 };
 
