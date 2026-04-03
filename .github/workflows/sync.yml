@@ -112,5 +112,5 @@ jobs:
           # Rebase onto the primary upstream's default branch and push
           echo ""
           echo "Rebasing sync-workflow onto ${PRIMARY_REMOTE}/${DEFAULT_BRANCH}"
-          git rebase "refs/remotes/${PRIMARY_REMOTE}/${DEFAULT_BRANCH}"
+          git rebase --onto "refs/remotes/${PRIMARY_REMOTE}/${DEFAULT_BRANCH}" --root HEAD
           git push "$PUSH_URL" HEAD:"refs/heads/$DEFAULT_BRANCH" --force
