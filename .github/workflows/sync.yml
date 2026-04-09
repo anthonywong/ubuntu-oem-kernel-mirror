@@ -33,6 +33,22 @@ jobs:
           DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
           PUSH_URL="https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/${{ github.repository }}.git"
 
+          # Retry helper: retry a command up to 3 times with 30-second waits.
+          retry() {
+            local max=3
+            local delay=30
+            local n=1
+            until "$@"; do
+              if [ "$n" -ge "$max" ]; then
+                echo "::error::Command failed after $max attempts: $*"
+                return 1
+              fi
+              echo "Attempt $n/$max failed. Retrying in ${delay}s..."
+              sleep "$delay"
+              n=$((n + 1))
+            done
+          }
+
           # Build the list of source URLs.
           # manual_urls (workflow_dispatch input) takes priority; fall back to
           # the SOURCE_REPO_URLS repository variable.  Both accept multiple
@@ -74,9 +90,9 @@ jobs:
               PRIMARY_REMOTE="$REMOTE_NAME"
             fi
 
-            # Add and fetch the remote
+            # Add and fetch the remote (with retries to handle transient errors)
             git remote add "$REMOTE_NAME" "$SOURCE_URL"
-            git fetch "$REMOTE_NAME" --tags --prune
+            retry git fetch "$REMOTE_NAME" --tags --prune
 
             # Push all branches from this remote (except the default branch)
             git for-each-ref "refs/remotes/${REMOTE_NAME}" --format='%(refname)' | while read ref; do
@@ -99,7 +115,7 @@ jobs:
               fi
 
               echo "$branch_name" >> "$SEEN_BRANCHES_FILE"
-              git push "$PUSH_URL" "$ref:refs/heads/$branch_name" --force
+              retry git push "$PUSH_URL" "$ref:refs/heads/$branch_name" --force
             done
 
           done <<< "$URLS"
@@ -107,10 +123,10 @@ jobs:
           rm -f "$SEEN_BRANCHES_FILE"
 
           # Push all tags (from every remote that was fetched)
-          git push "$PUSH_URL" --tags --force
+          retry git push "$PUSH_URL" --tags --force
 
           # Rebase onto the primary upstream's default branch and push
           echo ""
           echo "Rebasing sync-workflow onto ${PRIMARY_REMOTE}/${DEFAULT_BRANCH}"
           git rebase --onto "refs/remotes/${PRIMARY_REMOTE}/${DEFAULT_BRANCH}" --root HEAD
-          git push "$PUSH_URL" HEAD:"refs/heads/$DEFAULT_BRANCH" --force
+          retry git push "$PUSH_URL" HEAD:"refs/heads/$DEFAULT_BRANCH" --force
