@@ -69,4 +69,4 @@ jobs:
         with:
           name: kernel-build-log
           path: ${{ github.workspace }}/kernel-build/build.log
-          retention-days: 2
+          retention-days: 30
