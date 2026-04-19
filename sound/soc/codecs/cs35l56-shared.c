@@ -206,7 +206,6 @@ static bool cs35l56_readable_reg(struct device *dev, unsigned int reg)
 	case CS35L56_IRQ1_MASK_8:
 	case CS35L56_IRQ1_MASK_18:
 	case CS35L56_IRQ1_MASK_20:
-	case CS35L56_GPIO_STATUS1 ... CS35L56_GPIO13_CTRL1:
 	case CS35L56_DSP_VIRTUAL1_MBOX_1:
 	case CS35L56_DSP_VIRTUAL1_MBOX_2:
 	case CS35L56_DSP_VIRTUAL1_MBOX_3:
@@ -264,7 +263,6 @@ static bool cs35l56_common_volatile_reg(unsigned int reg)
 	case CS35L56_IRQ1_EINT_1 ... CS35L56_IRQ1_EINT_8:
 	case CS35L56_IRQ1_EINT_18:
 	case CS35L56_IRQ1_EINT_20:
-	case CS35L56_GPIO_STATUS1 ... CS35L56_GPIO13_CTRL1:
 	case CS35L56_DSP_VIRTUAL1_MBOX_1:
 	case CS35L56_DSP_VIRTUAL1_MBOX_2:
 	case CS35L56_DSP_VIRTUAL1_MBOX_3:
@@ -1158,97 +1156,6 @@ err:
 	return ret;
 }
 EXPORT_SYMBOL_NS_GPL(cs35l56_get_speaker_id, "SND_SOC_CS35L56_SHARED");
-
-int cs35l56_get_onchip_speaker_id(struct cs35l56_base *cs35l56_base,
-				  struct fwnode_handle *ext_node)
-{
-	static const char * const node_name = "01fa-spk-id-gpios-onchip";
-	struct regmap *regmap = cs35l56_base->regmap;
-	unsigned int saved_ctrl[8];
-	u32 gpios[8];
-	int num_gpios;
-	unsigned int addr, status;
-	int speaker_id = 0;
-	int i, ret;
-
-	num_gpios = fwnode_property_count_u32(ext_node, node_name);
-	if (num_gpios < 1)
-		return -ENOENT;
-
-	if (num_gpios > ARRAY_SIZE(gpios)) {
-		dev_err(cs35l56_base->dev, "%s has too many entries (%d)\n", node_name, num_gpios);
-		return -EOVERFLOW;
-	}
-
-	ret = fwnode_property_read_u32_array(ext_node, node_name, gpios, num_gpios);
-	if (ret) {
-		dev_err(cs35l56_base->dev, "Error reading %s: %d\n", node_name, ret);
-		return ret;
-	}
-
-	ret = 0;
-	for (i = 0; i < num_gpios; i++) {
-		if (gpios[i] < 1 || gpios[i] > CS35L56_MAX_GPIO) {
-			dev_err(cs35l56_base->dev, "Bad GPIO#%d in %s\n", gpios[i], node_name);
-			ret = -EINVAL;
-		}
-
-		/* Change to zero-based */
-		gpios[i]--;
-	}
-	if (ret)
-		return ret;
-
-	for (i = 0; i < num_gpios; i++) {
-		addr = CS35L56_GPIO1_CTRL1 + (gpios[i] * sizeof(u32));
-		ret = regmap_read(regmap, addr, &saved_ctrl[i]);
-		if (ret) {
-			dev_err(cs35l56_base->dev, "GPIO%d read failed: %d\n", gpios[i] + 1, ret);
-			return ret;
-		}
-	}
-
-	for (i = 0; i < num_gpios; i++) {
-		addr = CS35L56_GPIO1_CTRL1 + (gpios[i] * sizeof(u32));
-		ret = regmap_update_bits(regmap, addr,
-					 CS35L56_GPIO_DIR_MASK | CS35L56_GPIO_FN_MASK,
-					 CS35L56_GPIO_DIR_MASK | CS35L56_GPIO_FN_GPIO);
-		if (ret) {
-			dev_err(cs35l56_base->dev, "GPIO%d func failed: %d\n", gpios[i] + 1, ret);
-			goto restore;
-		}
-	}
-
-	ret = regmap_read(regmap, CS35L56_GPIO_STATUS1, &status);
-	if (ret) {
-		dev_err(cs35l56_base->dev, "GPIO%d status read failed: %d\n", gpios[i] + 1, ret);
-		goto restore;
-	}
-
-	for (i = 0; i < num_gpios; i++) {
-		speaker_id <<= 1;
-
-		if (status & BIT(gpios[i]))
-			speaker_id |= 1;
-	}
-
-	ret = 0;
-
-restore:
-	for (i = 0; i < num_gpios; i++) {
-		addr = CS35L56_GPIO1_CTRL1 + (gpios[i] * sizeof(u32));
-		if (regmap_write(regmap, addr, saved_ctrl[i]))
-			dev_warn(cs35l56_base->dev, "GPIO%d restore failed\n", gpios[i] + 1);
-	}
-
-	if (ret < 0)
-		return ret;
-
-	dev_dbg(cs35l56_base->dev, "Onchip GPIO Speaker ID = %d\n", speaker_id);
-
-	return speaker_id;
-}
-EXPORT_SYMBOL_NS_GPL(cs35l56_get_onchip_speaker_id, "SND_SOC_CS35L56_SHARED");
 
 static const u32 cs35l56_bclk_valid_for_pll_freq_table[] = {
 	[0x0C] = 128000,
