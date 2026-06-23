@@ -11,6 +11,7 @@
 #include <linux/idr.h>
 #include <linux/irq.h>
 #include <linux/irqdomain.h>
+#include <linux/jiffies.h>
 #include <linux/lockdep_types.h>
 #include <linux/mod_devicetable.h>
 #include <linux/mutex.h>
@@ -1088,8 +1089,6 @@ int sdw_stream_remove_slave(struct sdw_slave *slave,
 
 int sdw_slave_get_scale_index(struct sdw_slave *slave, u8 *base);
 
-int sdw_slave_wait_for_init(struct sdw_slave *slave, int timeout_ms);
-
 /* messaging and data APIs */
 int sdw_read(struct sdw_slave *slave, u32 addr);
 int sdw_write(struct sdw_slave *slave, u32 addr, u8 value);
@@ -1128,12 +1127,6 @@ static inline struct device *of_sdw_find_device_by_node(struct device_node *np)
 }
 
 static inline int sdw_slave_get_current_bank(struct sdw_slave *sdev)
-{
-	WARN_ONCE(1, "SoundWire API is disabled");
-	return -EINVAL;
-}
-
-static inline int sdw_slave_wait_for_init(struct sdw_slave *slave, int timeout_ms)
 {
 	WARN_ONCE(1, "SoundWire API is disabled");
 	return -EINVAL;
@@ -1201,5 +1194,34 @@ static inline int sdw_update_no_pm(struct sdw_slave *slave, u32 addr, u8 mask, u
 }
 
 #endif /* CONFIG_SOUNDWIRE */
+
+/**
+ * sdw_slave_wait_for_init - Wait for device initialisation
+ * @slave: Pointer to the SoundWire peripheral.
+ * @timeout_ms: Timeout in milliseconds.
+ *
+ * Wait for a peripheral device to enumerate and be initialised by the
+ * SoundWire core.
+ *
+ * Return: Zero on success, and a negative error code on failure.
+ */
+static inline int sdw_slave_wait_for_init(struct sdw_slave *slave, int timeout_ms)
+{
+	unsigned long time;
+
+	if (!slave)
+		return 0;
+
+	time = wait_for_completion_timeout(&slave->initialization_complete,
+					   msecs_to_jiffies(timeout_ms));
+	if (!time) {
+		dev_err(&slave->dev, "Initialization not complete\n");
+		return -ETIMEDOUT;
+	}
+
+	slave->unattach_request = 0;
+
+	return 0;
+}
 
 #endif /* __SOUNDWIRE_H */
