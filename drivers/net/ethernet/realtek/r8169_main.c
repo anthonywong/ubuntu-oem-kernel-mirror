@@ -734,6 +734,7 @@ struct rtl8169_private {
 	enum mac_version mac_version;
 	enum rtl_dash_type dash_type;
 	enum rtl_sfp_mode sfp_mode;
+	unsigned rtl8116af_quirk:1;
 	u32 cur_rx; /* Index into the Rx descriptor buffer of next Rx pkt. */
 	u32 cur_tx; /* Index into the Tx descriptor buffer of next Rx pkt. */
 	u32 dirty_tx;
@@ -1203,12 +1204,22 @@ static bool rtl_is_8116af(struct rtl8169_private *tp)
 		(r8168_mac_ocp_read(tp, 0xd006) & 0x00ff) == 0x0000;
 }
 
+static const struct dmi_system_id rtl8116af_quirk_dmi_table[] = {
+	{
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "Dell"),
+			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "Dell Pro 5 Micro P5M1260"),
+		},
+	},
+	{}
+};
+
 static int r8168_phy_ocp_read(struct rtl8169_private *tp, u32 reg)
 {
 	if (rtl_ocp_reg_failure(reg))
 		return 0;
 
-	if (tp->sfp_mode == RTL_SFP_8116_AF) {
+	if (tp->rtl8116af_quirk && tp->sfp_mode == RTL_SFP_8116_AF) {
 		switch (reg) {
 		case OCP_STD_PHY_BASE + 2 * MII_PHYSID1:
 			return upper_16_bits(PHY_ID_RTL8116AF_DUMMY);
@@ -1608,7 +1619,7 @@ static enum rtl_sfp_mode rtl_get_sfp_mode(struct rtl8169_private *tp)
 
 		if ((data & 0xff) == 0x07)
 			return RTL_SFP_8127_ATF;
-	} else if (rtl_is_8116af(tp)) {
+	} else if (tp->rtl8116af_quirk) {
 		return RTL_SFP_8116_AF;
 	}
 
@@ -3123,24 +3134,14 @@ static void rtl_enable_ltr(struct rtl8169_private *tp)
 		r8168_mac_ocp_write(tp, 0xcdf2, 0x9003);
 		r8168_mac_ocp_modify(tp, LTR_OBFF_LOCK, 0x0000, LINK_SPEED_CHANGE_EN);
 		break;
-	case RTL_GIGA_MAC_VER_52:
-		r8168_mac_ocp_write(tp, 0xcdd0, 0x9003);
-		r8168_mac_ocp_modify(tp, LTR_SNOOP, 0x0000, LTR_SNOOP_EN);
-		r8168_mac_ocp_write(tp, 0xe02c, 0x1880);
-		r8168_mac_ocp_write(tp, 0xe02e, 0x4880);
-		r8168_mac_ocp_modify(tp, ALDPS_LTR, 0x0000, ALDPS_LTR_EN);
-		r8168_mac_ocp_write(tp, 0xcdd8, 0x9003);
-		r8168_mac_ocp_write(tp, 0xcdda, 0x9003);
-		r8168_mac_ocp_write(tp, 0xcddc, 0x9003);
-		r8168_mac_ocp_write(tp, 0xcdd2, 0x883c);
-		r8168_mac_ocp_write(tp, 0xcdd4, 0x8c12);
-		r8168_mac_ocp_write(tp, 0xcdd6, 0x9003);
-		r8168_mac_ocp_write(tp, 0xe0a6, 0x9003);
-		r8168_mac_ocp_write(tp, 0xe0a8, 0x9003);
-		break;
 	case RTL_GIGA_MAC_VER_46 ... RTL_GIGA_MAC_VER_48:
+	case RTL_GIGA_MAC_VER_52:
 		r8168_mac_ocp_modify(tp, ALDPS_LTR, 0x0000, ALDPS_LTR_EN);
 		RTL_W8(tp, COMBO_LTR_EXTEND, RTL_R8(tp, COMBO_LTR_EXTEND) | COMBO_LTR_EXTEND_EN);
+		if (tp->rtl8116af_quirk) {
+			r8168_mac_ocp_write(tp, 0xe0a6, 0x9003);
+			r8168_mac_ocp_write(tp, 0xe0a8, 0x9003);
+		}
 		fallthrough;
 	case RTL_GIGA_MAC_VER_51:
 		r8168_mac_ocp_modify(tp, LTR_SNOOP, 0x0000, LTR_SNOOP_EN);
@@ -3158,7 +3159,8 @@ static void rtl_enable_ltr(struct rtl8169_private *tp)
 	}
 	/* chip can trigger LTR */
 	r8168_mac_ocp_modify(tp, LTR_OBFF_LOCK, 0x0003, LTR_OBFF_LOCK_EN);
-	r8168_mac_ocp_modify(tp, SEND_LTR_MSG, 0x0000, LTR_MSG_EN);
+	if (tp->rtl8116af_quirk)
+		r8168_mac_ocp_modify(tp, SEND_LTR_MSG, 0x0000, LTR_MSG_EN);
 }
 
 static void rtl_hw_aspm_clkreq_enable(struct rtl8169_private *tp, bool enable)
@@ -3192,7 +3194,6 @@ static void rtl_hw_aspm_clkreq_enable(struct rtl8169_private *tp, bool enable)
 		rtl_enable_ltr(tp);
 		switch (tp->mac_version) {
 		case RTL_GIGA_MAC_VER_46 ... RTL_GIGA_MAC_VER_48:
-		case RTL_GIGA_MAC_VER_52:
 		case RTL_GIGA_MAC_VER_61 ... RTL_GIGA_MAC_VER_LAST:
 			/* reset ephy tx/rx disable timer */
 			r8168_mac_ocp_modify(tp, 0xe094, 0xff00, 0);
@@ -3202,16 +3203,23 @@ static void rtl_hw_aspm_clkreq_enable(struct rtl8169_private *tp, bool enable)
 		default:
 			break;
 		}
+		if (tp->rtl8116af_quirk) {
+			/* reset ephy tx/rx disable timer */
+			r8168_mac_ocp_modify(tp, 0xe094, 0xff00, 0);
+			/* chip can trigger L1.2 */
+			r8168_mac_ocp_modify(tp, 0xe092, 0x00ff, BIT(2));
+		}
 	} else {
 		switch (tp->mac_version) {
 		case RTL_GIGA_MAC_VER_46 ... RTL_GIGA_MAC_VER_48:
-		case RTL_GIGA_MAC_VER_52:
 		case RTL_GIGA_MAC_VER_61 ... RTL_GIGA_MAC_VER_LAST:
 			r8168_mac_ocp_modify(tp, 0xe092, 0x00ff, 0);
 			break;
 		default:
 			break;
 		}
+		if (tp->rtl8116af_quirk)
+			r8168_mac_ocp_modify(tp, 0xe092, 0x00ff, 0);
 
 		switch (tp->mac_version) {
 		case RTL_GIGA_MAC_VER_70:
@@ -3746,9 +3754,12 @@ static void rtl_hw_start_8117(struct rtl8169_private *tp)
 
 	rtl_eri_set_bits(tp, 0xd4, 0x0010);
 
-	rtl_eri_write(tp, 0x5f0, ERIAR_MASK_0011, 0x4000);
-
-	r8168_mac_ocp_write(tp, 0xe098, 0xc302);
+	if (tp->rtl8116af_quirk) {
+		rtl_eri_write(tp, 0x5f0, ERIAR_MASK_0011, 0x4000);
+		r8168_mac_ocp_write(tp, 0xe098, 0xc302);
+	} else {
+		rtl_eri_write(tp, 0x5f0, ERIAR_MASK_0011, 0x4f87);
+	}
 
 	rtl_disable_rxdvgate(tp);
 
@@ -3773,16 +3784,22 @@ static void rtl_hw_start_8117(struct rtl8169_private *tp)
 	}
 
 	r8168_mac_ocp_modify(tp, 0xe056, 0x00f0, 0x0000);
-	r8168_mac_ocp_write(tp, 0xea80, 0x0000);
-	r8168_mac_ocp_modify(tp, 0xe052, 0x0009, 0x0000);
-	r8168_mac_ocp_modify(tp, 0xd420, 0x0fff, 0x045f);
+	if (tp->rtl8116af_quirk) {
+		r8168_mac_ocp_write(tp, 0xea80, 0x0000);
+		r8168_mac_ocp_modify(tp, 0xe052, 0x0009, 0x0000);
+		r8168_mac_ocp_modify(tp, 0xd420, 0x0fff, 0x045f);
+	} else {
+		r8168_mac_ocp_modify(tp, 0xe052, 0x0000, 0x0009);
+		r8168_mac_ocp_modify(tp, 0xd420, 0x0fff, 0x047f);
+	}
 
 	r8168_mac_ocp_write(tp, 0xe63e, 0x0001);
 	r8168_mac_ocp_write(tp, 0xe63e, 0x0000);
 	r8168_mac_ocp_write(tp, 0xc094, 0x0000);
 	r8168_mac_ocp_write(tp, 0xc09e, 0x0000);
 
-	rtl_disable_hidden_function(tp->pci_dev);
+	if (tp->rtl8116af_quirk)
+		rtl_disable_hidden_function(tp->pci_dev);
 	/* firmware is for MAC only */
 	r8169_apply_firmware(tp);
 }
@@ -5765,6 +5782,8 @@ static int rtl_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 				     xid);
 	tp->mac_version = chip->mac_version;
 	tp->fw_name = chip->fw_name;
+	tp->rtl8116af_quirk = rtl_is_8116af(tp) &&
+			       dmi_check_system(rtl8116af_quirk_dmi_table);
 
 	/* Disable ASPM L1 as that cause random device stop working
 	 * problems as well as full system hangs for some PCIe devices users.
