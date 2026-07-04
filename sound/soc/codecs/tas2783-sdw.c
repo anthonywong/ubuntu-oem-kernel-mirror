@@ -1090,7 +1090,13 @@ static s32 tas2783_sdca_dev_resume(struct device *dev)
 		return ret;
 
 	regcache_cache_only(tas_dev->regmap, false);
-	regcache_sync(tas_dev->regmap);
+	ret = regcache_sync(tas_dev->regmap);
+	if (ret) {
+		regcache_cache_only(tas_dev->regmap, true);
+		regcache_mark_dirty(tas_dev->regmap);
+		return ret;
+	}
+
 	return 0;
 }
 
@@ -1184,6 +1190,7 @@ static s32 tas_update_status(struct sdw_slave *slave,
 {
 	struct tas2783_prv *tas_dev = dev_get_drvdata(&slave->dev);
 	struct device *dev = &slave->dev;
+	int ret;
 
 	dev_dbg(dev, "Perifpheral status = %s",
 		status == SDW_SLAVE_UNATTACHED ? "unattached" :
@@ -1201,7 +1208,12 @@ static s32 tas_update_status(struct sdw_slave *slave,
 
 	/* updated the cache data to device */
 	regcache_cache_only(tas_dev->regmap, false);
-	regcache_sync(tas_dev->regmap);
+	ret = regcache_sync(tas_dev->regmap);
+	if (ret) {
+		regcache_cache_only(tas_dev->regmap, true);
+		regcache_mark_dirty(tas_dev->regmap);
+		return ret;
+	}
 
 	/* perform I/O transfers required for Slave initialization */
 	return tas_io_init(&slave->dev, slave);
