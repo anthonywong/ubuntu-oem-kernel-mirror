@@ -615,9 +615,11 @@ int ath12k_mhi_start(struct ath12k_pci *ab_pci)
 
 	ab_pci->mhi_ctrl->timeout_ms = MHI_TIMEOUT_DEFAULT_MS;
 
-	ret = ath12k_mhi_set_state(ab_pci, ATH12K_MHI_INIT);
-	if (ret)
-		goto out;
+	if (!test_bit(ATH12K_MHI_INIT, &ab_pci->mhi_state)) {
+		ret = ath12k_mhi_set_state(ab_pci, ATH12K_MHI_INIT);
+		if (ret)
+			goto out;
+	}
 
 	ret = ath12k_mhi_set_state(ab_pci, ATH12K_MHI_POWER_ON);
 	if (ret)
@@ -640,7 +642,8 @@ void ath12k_mhi_stop(struct ath12k_pci *ab_pci, bool is_suspend)
 	else
 		ath12k_mhi_set_state(ab_pci, ATH12K_MHI_POWER_OFF);
 
-	ath12k_mhi_set_state(ab_pci, ATH12K_MHI_DEINIT);
+	if (!is_suspend)
+		ath12k_mhi_set_state(ab_pci, ATH12K_MHI_DEINIT);
 }
 
 void ath12k_mhi_suspend(struct ath12k_pci *ab_pci)
