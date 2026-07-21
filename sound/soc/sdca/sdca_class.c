@@ -148,8 +148,8 @@ static void class_boot_work(struct work_struct *work)
 	if (ret)
 		goto err;
 
-	drv->irq_info = sdca_irq_allocate(drv->dev, drv->dev_regmap,
-					  drv->sdw->irq);
+	drv->irq_info = devm_sdca_irq_allocate(drv->dev, drv->dev_regmap,
+					       drv->sdw->irq);
 	if (IS_ERR(drv->irq_info))
 		goto err;
 
