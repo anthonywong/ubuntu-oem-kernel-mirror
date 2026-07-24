@@ -4,7 +4,7 @@
 # FLAVOUR: amd64-oem
 # FLAVOUR_DEP: {'amd64-oem': 'amd64-generic'}
 
-include "../../debian.master/config/annotations"
+include "../../debian.hwe-6.17/config/annotations"
 
 CONFIG_RUST                                     policy<{'amd64': '-'}>
 CONFIG_RUST                                     note<'Disable rust for oem'>
