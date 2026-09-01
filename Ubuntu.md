@@ -1,8 +1,8 @@
-Name:    linux
-Version: 7.1.0
-Series:  26.10 (stonking)
+Name:    linux-oem-7.2
+Version: 7.2.0
+Series:  26.04 (resolute)
 Description:
-    This is the source code for the Ubuntu linux kernel for the 26.10 series. This
-    source tree is used to produce the flavours: generic, generic-64k.
+    This is the source code for the Ubuntu linux kernel for the 26.04 series. This
+    source tree is used to produce the flavours: oem.
     This kernel is configured to support the widest range of desktop, laptop and
     server configurations.
