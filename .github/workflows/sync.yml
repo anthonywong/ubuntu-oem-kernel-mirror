@@ -34,7 +34,6 @@ jobs:
           VAR_URLS: ${{ vars.SOURCE_REPO_URLS }}
         run: |
           DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
-          PUSH_URL="https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/${{ github.repository }}.git"
 
           # Build the list of source URLs.
           # manual_urls (workflow_dispatch input) takes priority; fall back to
@@ -102,7 +101,7 @@ jobs:
               fi
 
               echo "$branch_name" >> "$SEEN_BRANCHES_FILE"
-              git push "$PUSH_URL" "$ref:refs/heads/$branch_name" --force
+              git push origin "$ref:refs/heads/$branch_name" --force
             done
 
           done <<< "$URLS"
@@ -110,10 +109,10 @@ jobs:
           rm -f "$SEEN_BRANCHES_FILE"
 
           # Push all tags (from every remote that was fetched)
-          git push "$PUSH_URL" --tags --force
+          git push origin --tags --force
 
           # Rebase onto the primary upstream's default branch and push
           echo ""
           echo "Rebasing sync-workflow onto ${PRIMARY_REMOTE}/${DEFAULT_BRANCH}"
           git rebase --onto "refs/remotes/${PRIMARY_REMOTE}/${DEFAULT_BRANCH}" --root HEAD
-          git push "$PUSH_URL" HEAD:"refs/heads/$DEFAULT_BRANCH" --force
+          git push origin HEAD:"refs/heads/$DEFAULT_BRANCH" --force
