@@ -12,7 +12,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
         with:
-          fetch-depth: 100
+          fetch-depth: 200
 
       - name: Fetch missing history
         env:
