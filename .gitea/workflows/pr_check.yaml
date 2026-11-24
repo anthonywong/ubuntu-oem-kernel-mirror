@@ -14,6 +14,31 @@ jobs:
         with:
           fetch-depth: 100
 
+      - name: Fetch missing history
+        env:
+          START: ${{ github.event.pull_request.base.sha }}
+          END: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # The shallow checkout only contains the history of the PR head. If
+          # the PR branch is behind the target branch, the base commit is
+          # missing and START..END can't be resolved. Fetch a limited history
+          # of the base commit to find the common ancestor. Never fetch the
+          # full history, it is too expensive for the server.
+          if git merge-base "${START}" "${END}" > /dev/null 2>&1 ||
+             [ "$(git rev-parse --is-shallow-repository)" != "true" ]; then
+            exit 0
+          fi
+          depth=200
+          echo "Fetching ${START} with depth ${depth}"
+          git fetch --no-tags --depth="${depth}" origin "${START}"
+          if ! git merge-base "${START}" "${END}" > /dev/null 2>&1; then
+            echo "Error: No common ancestor of ${START} and ${END} found"
+            echo "in the fetched history. Either the branch is too far behind"
+            echo "the target branch (rebase it) or it has too many commits"
+            echo "(increase the fetch-depth of actions/checkout)."
+            exit 1
+          fi
+
       - name: Set up Python venv
         uses: actions/prepare-venv@v1
 
